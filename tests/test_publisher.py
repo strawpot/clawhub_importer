@@ -137,3 +137,22 @@ def test_build_changelog_empty():
     assert "Imported from ClawHub" in result
     assert "MIT License" in result
     assert "clawhub.ai" in result
+
+
+# --- rate limit retry for publish ---
+
+@respx.mock
+async def test_publish_skill_retries_on_429():
+    """Publisher should retry on 429 from StrawHub."""
+    route = respx.post("https://strawhub.dev/api/v1/skills")
+    route.side_effect = [
+        httpx.Response(429, headers={"ratelimit-reset": "1"}),
+        httpx.Response(201, json={"slug": "test-skill"}),
+    ]
+
+    async with httpx.AsyncClient() as client:
+        result = await publish_skill(client, _make_skill(), "fake-token")
+
+    assert result.success
+    assert result.status_code == 201
+    assert route.call_count == 2

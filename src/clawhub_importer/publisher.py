@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from .crawler import CrawledSkill
+from .crawler import CrawledSkill, _request_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,8 @@ async def publish_skill(
         )
 
     try:
-        resp = await client.post(
+        resp = await _request_with_retry(
+            client, "POST",
             f"{base_url}/api/v1/skills",
             data=fields,
             files=files_list,
@@ -98,25 +99,24 @@ async def publish_skill(
             timeout=60.0,
         )
 
-        if resp.status_code in (200, 201):
-            logger.info("Published %s (v%s) → StrawHub", skill.slug, skill.version)
-            return PublishResult(
-                slug=skill.slug,
-                success=True,
-                status_code=resp.status_code,
-                message="OK",
-            )
-        else:
-            body = resp.text[:500]
-            logger.warning(
-                "Failed to publish %s: %d %s", skill.slug, resp.status_code, body
-            )
-            return PublishResult(
-                slug=skill.slug,
-                success=False,
-                status_code=resp.status_code,
-                message=body,
-            )
+        logger.info("Published %s (v%s) → StrawHub", skill.slug, skill.version)
+        return PublishResult(
+            slug=skill.slug,
+            success=True,
+            status_code=resp.status_code,
+            message="OK",
+        )
+    except httpx.HTTPStatusError as e:
+        body = e.response.text[:500]
+        logger.warning(
+            "Failed to publish %s: %d %s", skill.slug, e.response.status_code, body
+        )
+        return PublishResult(
+            slug=skill.slug,
+            success=False,
+            status_code=e.response.status_code,
+            message=body,
+        )
     except Exception as e:
         logger.exception("Error publishing %s", skill.slug)
         return PublishResult(
