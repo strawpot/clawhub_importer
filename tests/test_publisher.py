@@ -4,7 +4,7 @@ import httpx
 import respx
 
 from clawhub_importer.crawler import CrawledSkill, SkillFile
-from clawhub_importer.publisher import publish_skill, publish_all, STRAWHUB_TARGETS
+from clawhub_importer.publisher import publish_skill, publish_all, STRAWHUB_TARGETS, _build_changelog
 
 
 def _make_skill(slug: str = "test-skill") -> CrawledSkill:
@@ -117,3 +117,42 @@ async def test_publish_all_with_preview_target():
 
     assert len(results) == 1
     assert results[0].success
+
+
+# --- _build_changelog ---
+
+def test_build_changelog_with_existing():
+    skill = _make_skill()
+    skill.changelog = "Fixed a bug"
+    result = _build_changelog(skill)
+    assert "Fixed a bug" in result
+    assert "Imported from ClawHub" in result
+    assert "MIT License" in result
+
+
+def test_build_changelog_empty():
+    skill = _make_skill()
+    skill.changelog = ""
+    result = _build_changelog(skill)
+    assert "Imported from ClawHub" in result
+    assert "MIT License" in result
+    assert "clawhub.ai" in result
+
+
+# --- rate limit retry for publish ---
+
+@respx.mock
+async def test_publish_skill_retries_on_429():
+    """Publisher should retry on 429 from StrawHub."""
+    route = respx.post("https://strawhub.dev/api/v1/skills")
+    route.side_effect = [
+        httpx.Response(429, headers={"ratelimit-reset": "1"}),
+        httpx.Response(201, json={"slug": "test-skill"}),
+    ]
+
+    async with httpx.AsyncClient() as client:
+        result = await publish_skill(client, _make_skill(), "fake-token")
+
+    assert result.success
+    assert result.status_code == 201
+    assert route.call_count == 2

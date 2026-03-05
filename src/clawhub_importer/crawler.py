@@ -41,8 +41,17 @@ class CrawledSkill:
     skill_md: str | None = None
 
 
+MAX_RETRIES = 5
+
+
 async def _respect_rate_limit(resp: httpx.Response) -> None:
-    """Sleep if we're running low on rate limit quota."""
+    """Sleep to spread requests evenly across the rate limit window.
+
+    ClawHub returns these headers on every response:
+        ratelimit-limit:     120 (list) or 20 (download)
+        ratelimit-remaining: requests left in current window
+        ratelimit-reset:     seconds until window resets
+    """
     remaining = resp.headers.get("ratelimit-remaining")
     reset = resp.headers.get("ratelimit-reset")
     if remaining is None or reset is None:
@@ -56,11 +65,54 @@ async def _respect_rate_limit(resp: httpx.Response) -> None:
         wait = max(reset_secs, 1)
         logger.warning("Rate limit nearly exhausted (%d remaining), waiting %ds", remaining_int, wait)
         await asyncio.sleep(wait)
-    elif remaining_int <= 5:
-        # Running low — add a small delay to spread requests
+    elif remaining_int <= 10:
+        # Running low — spread remaining requests across the reset window
         wait = max(reset_secs / max(remaining_int, 1), 1)
         logger.info("Rate limit low (%d remaining), throttling %.1fs", remaining_int, wait)
         await asyncio.sleep(wait)
+    else:
+        # Proactive pacing: ensure we don't exceed the rate limit
+        # e.g. 20 req/60s → at least 3s between requests
+        limit = resp.headers.get("ratelimit-limit")
+        if limit is not None:
+            min_interval = reset_secs / max(int(limit), 1)
+            if min_interval >= 1.0:
+                logger.debug("Pacing: %.1fs delay (%s remaining)", min_interval, remaining)
+                await asyncio.sleep(min_interval)
+
+
+async def _request_with_retry(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    **kwargs: Any,
+) -> httpx.Response:
+    """Make an HTTP request with automatic retry on 429 Too Many Requests."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        resp = await client.request(method, url, **kwargs)
+
+        if resp.status_code != 429:
+            await _respect_rate_limit(resp)
+            resp.raise_for_status()
+            return resp
+
+        # 429 — extract wait time from headers or use exponential backoff
+        reset = resp.headers.get("ratelimit-reset") or resp.headers.get("retry-after")
+        if reset is not None:
+            wait = max(int(reset), 1)
+        else:
+            wait = min(2 ** attempt, 120)
+
+        logger.warning(
+            "Rate limited (429), attempt %d/%d, waiting %ds before retry",
+            attempt, MAX_RETRIES, wait,
+        )
+        await asyncio.sleep(wait)
+
+    # Final attempt — let it raise if still 429
+    resp = await client.request(method, url, **kwargs)
+    resp.raise_for_status()
+    return resp
 
 
 async def list_all_skills(client: httpx.AsyncClient) -> list[dict[str, Any]]:
@@ -73,9 +125,7 @@ async def list_all_skills(client: httpx.AsyncClient) -> list[dict[str, Any]]:
         if cursor:
             params["cursor"] = cursor
 
-        resp = await client.get(f"{CLAWHUB_BASE}/api/v1/skills", params=params)
-        resp.raise_for_status()
-        await _respect_rate_limit(resp)
+        resp = await _request_with_retry(client, "GET", f"{CLAWHUB_BASE}/api/v1/skills", params=params)
         data = resp.json()
 
         items = data.get("items", [])
@@ -91,21 +141,18 @@ async def list_all_skills(client: httpx.AsyncClient) -> list[dict[str, Any]]:
 
 async def fetch_skill_detail(client: httpx.AsyncClient, slug: str) -> dict[str, Any]:
     """Fetch full detail for a single skill."""
-    resp = await client.get(f"{CLAWHUB_BASE}/api/v1/skills/{slug}")
-    resp.raise_for_status()
-    await _respect_rate_limit(resp)
+    resp = await _request_with_retry(client, "GET", f"{CLAWHUB_BASE}/api/v1/skills/{slug}")
     return resp.json()
 
 
-async def download_skill_zip(client: httpx.AsyncClient, slug: str) -> tuple[bytes, httpx.Response]:
+async def download_skill_zip(client: httpx.AsyncClient, slug: str) -> bytes:
     """Download the full skill zip archive."""
-    resp = await client.get(
-        CLAWHUB_DOWNLOAD,
+    resp = await _request_with_retry(
+        client, "GET", CLAWHUB_DOWNLOAD,
         params={"slug": slug},
         timeout=60.0,
     )
-    resp.raise_for_status()
-    return resp.content, resp
+    return resp.content
 
 
 def extract_zip(zip_bytes: bytes) -> list[SkillFile]:
@@ -141,8 +188,7 @@ async def crawl_skill(
     latest = detail.get("latestVersion") or {}
 
     # Download the full zip archive (rate-limited at 20 req/60s)
-    zip_bytes, resp = await download_skill_zip(client, slug)
-    await _respect_rate_limit(resp)
+    zip_bytes = await download_skill_zip(client, slug)
 
     files = extract_zip(zip_bytes)
     logger.info(

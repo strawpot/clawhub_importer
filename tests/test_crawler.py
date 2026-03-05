@@ -17,6 +17,7 @@ from clawhub_importer.crawler import (
     fetch_skill_detail,
     crawl_skill,
     _respect_rate_limit,
+    _request_with_retry,
 )
 
 
@@ -57,7 +58,9 @@ def test_extract_zip_skips_directories():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("SKILL.md", "# Hi")
-        zf.mkdir("subdir/")
+        # Create a directory entry (compatible with Python 3.10+)
+        dir_info = zipfile.ZipInfo("subdir/")
+        zf.writestr(dir_info, "")
     files = extract_zip(buf.getvalue())
     assert len(files) == 1
 
@@ -160,3 +163,49 @@ async def test_crawl_skill_no_skill_md():
 async def test_rate_limit_no_headers():
     resp = httpx.Response(200)
     await _respect_rate_limit(resp)  # should not raise
+
+
+# --- _request_with_retry ---
+
+@respx.mock
+async def test_retry_on_429():
+    """Should retry after 429 and succeed on the next attempt."""
+    route = respx.get(f"{CLAWHUB_BASE}/api/v1/skills/test")
+    route.side_effect = [
+        httpx.Response(429, headers={"ratelimit-reset": "1"}),
+        httpx.Response(200, json={"slug": "test"}),
+    ]
+
+    async with httpx.AsyncClient() as client:
+        resp = await _request_with_retry(client, "GET", f"{CLAWHUB_BASE}/api/v1/skills/test")
+
+    assert resp.status_code == 200
+    assert route.call_count == 2
+
+
+@respx.mock
+async def test_retry_on_429_uses_retry_after():
+    """Should use retry-after header when ratelimit-reset is missing."""
+    route = respx.get(f"{CLAWHUB_BASE}/test")
+    route.side_effect = [
+        httpx.Response(429, headers={"retry-after": "1"}),
+        httpx.Response(200, json={"ok": True}),
+    ]
+
+    async with httpx.AsyncClient() as client:
+        resp = await _request_with_retry(client, "GET", f"{CLAWHUB_BASE}/test")
+
+    assert resp.status_code == 200
+
+
+@respx.mock
+async def test_no_retry_on_success():
+    """Should not retry on successful responses."""
+    route = respx.get(f"{CLAWHUB_BASE}/test")
+    route.mock(return_value=httpx.Response(200, json={"ok": True}))
+
+    async with httpx.AsyncClient() as client:
+        resp = await _request_with_retry(client, "GET", f"{CLAWHUB_BASE}/test")
+
+    assert resp.status_code == 200
+    assert route.call_count == 1
