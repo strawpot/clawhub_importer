@@ -4,7 +4,7 @@ import httpx
 import respx
 
 from clawhub_importer.crawler import CrawledSkill, SkillFile
-from clawhub_importer.publisher import publish_skill, publish_all, STRAWHUB_TARGETS
+from clawhub_importer.publisher import publish_skill, publish_all, STRAWHUB_TARGETS, _build_changelog
 
 
 def _make_skill(slug: str = "test-skill") -> CrawledSkill:
@@ -117,3 +117,23 @@ async def test_publish_all_with_preview_target():
 
     assert len(results) == 1
     assert results[0].success
+
+
+# --- _build_changelog ---
+
+def test_build_changelog_with_existing():
+    skill = _make_skill()
+    skill.changelog = "Fixed a bug"
+    result = _build_changelog(skill)
+    assert "Fixed a bug" in result
+    assert "Imported from ClawHub" in result
+    assert "MIT License" in result
+
+
+def test_build_changelog_empty():
+    skill = _make_skill()
+    skill.changelog = ""
+    result = _build_changelog(skill)
+    assert "Imported from ClawHub" in result
+    assert "MIT License" in result
+    assert "clawhub.ai" in result

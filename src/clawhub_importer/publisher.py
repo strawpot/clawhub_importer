@@ -19,6 +19,21 @@ STRAWHUB_TARGETS = {
 }
 STRAWHUB_BASE = STRAWHUB_TARGETS["production"]
 
+ATTRIBUTION = (
+    "Originally published on ClawHub (https://clawhub.ai). "
+    "Licensed under the MIT License. "
+    "Copyright (c) original skill author(s)."
+)
+
+
+def _build_changelog(skill: CrawledSkill) -> str:
+    """Build changelog with ClawHub attribution."""
+    parts = []
+    if skill.changelog:
+        parts.append(skill.changelog)
+    parts.append(f"Imported from ClawHub (v{skill.version}). {ATTRIBUTION}")
+    return "\n\n".join(parts)
+
 
 @dataclass
 class PublishResult:
@@ -41,7 +56,7 @@ async def publish_skill(
         "slug": skill.slug,
         "displayName": skill.display_name,
         "version": skill.version,
-        "changelog": skill.changelog or f"Imported from ClawHub ({skill.version})",
+        "changelog": _build_changelog(skill),
     }
 
     # Add dependencies if the transformed SKILL.md has them
