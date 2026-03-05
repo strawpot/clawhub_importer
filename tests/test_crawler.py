@@ -57,7 +57,9 @@ def test_extract_zip_skips_directories():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("SKILL.md", "# Hi")
-        zf.mkdir("subdir/")
+        # Create a directory entry (compatible with Python 3.10+)
+        dir_info = zipfile.ZipInfo("subdir/")
+        zf.writestr(dir_info, "")
     files = extract_zip(buf.getvalue())
     assert len(files) == 1
 
