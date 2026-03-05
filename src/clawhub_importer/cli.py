@@ -12,7 +12,7 @@ import sys
 import httpx
 
 from .crawler import crawl_skill, fetch_skill_detail, list_all_skills
-from .publisher import STRAWHUB_TARGETS, publish_all
+from .publisher import STRAWHUB_TARGETS, publish_skill
 from .state import DEFAULT_STATE_FILE, load_state, save_state
 from .transformer import transform_skill
 
@@ -105,64 +105,55 @@ async def run(args: argparse.Namespace) -> int:
         else:
             to_download = summaries
 
-        # 3. Download zips only for new/updated skills (expensive — 20 req/60s)
-        logger.info("Downloading %d skills...", len(to_download))
-        skills = []
-        for summary in to_download:
+        # 3. Stream pipeline: download → transform → publish, one skill at a time
+        logger.info("Processing %d skills...", len(to_download))
+        succeeded = 0
+        failed = 0
+        dump_skills = []
+
+        for i, summary in enumerate(to_download, 1):
+            slug = summary.get("slug", "?")
+            logger.info("[%d/%d] Processing %s...", i, len(to_download), slug)
+
+            # Download
             try:
                 skill = await crawl_skill(client, summary, detail=summary.get("_detail"))
-                skills.append(skill)
             except Exception:
-                logger.exception("Failed to download skill %s", summary.get("slug"))
+                logger.exception("Failed to download skill %s", slug)
+                failed += 1
+                continue
 
-        logger.info("Downloaded %d skills.", len(skills))
-
-        # 4. Transform
-        logger.info("Transforming metadata: openclaw → strawpot...")
-        for skill in skills:
+            # Transform
             transform_skill(skill)
 
-        # 5. Dump (if requested)
-        if args.dump_dir:
-            _dump_skills(skills, args.dump_dir)
-            logger.info("Dumped transformed skills to %s", args.dump_dir)
-            if not args.publish:
-                return 0
+            # Dump (if requested)
+            if args.dump_dir:
+                dump_skills.append(skill)
 
-        # 6. Publish
+            # Publish
+            if args.publish or args.dry_run:
+                if args.dry_run:
+                    logger.info("[DRY RUN] Would publish: %s (v%s)", skill.slug, skill.version)
+                    succeeded += 1
+                else:
+                    result = await publish_skill(client, skill, token, base_url=base_url)
+                    if result.success:
+                        succeeded += 1
+                        state.mark_imported(skill.slug, skill.version)
+                        save_state(state, state_path)
+                    else:
+                        failed += 1
+                        logger.warning("  FAILED: %s — %s", result.slug, result.message)
+            else:
+                logger.info("  %s (v%s) — %s", skill.slug, skill.version, skill.display_name)
+
+        if args.dump_dir and dump_skills:
+            _dump_skills(dump_skills, args.dump_dir)
+            logger.info("Dumped %d transformed skills to %s", len(dump_skills), args.dump_dir)
+
         if args.publish or args.dry_run:
-            logger.info(
-                "%s %d skills to StrawHub...",
-                "Publishing" if not args.dry_run else "[DRY RUN] Would publish",
-                len(skills),
-            )
-            results = await publish_all(client, skills, token, dry_run=args.dry_run, base_url=base_url)
-
-            succeeded = sum(1 for r in results if r.success)
-            failed = sum(1 for r in results if not r.success)
             logger.info("Done. %d succeeded, %d failed.", succeeded, failed)
-
-            # Update state for successfully published skills
-            for r in results:
-                if r.success:
-                    matching = next((s for s in skills if s.slug == r.slug), None)
-                    if matching and not args.dry_run:
-                        state.mark_imported(matching.slug, matching.version)
-
-            for r in results:
-                if not r.success:
-                    logger.warning("  FAILED: %s — %s", r.slug, r.message)
-
-            # Save state after publish (even if some failed)
-            if not args.dry_run:
-                save_state(state, state_path)
-
             return 0 if failed == 0 else 1
-
-        # Default: just list what was crawled
-        logger.info("Skills to import (use --publish or --dry-run to push to StrawHub):")
-        for s in skills:
-            logger.info("  %s (v%s) — %s", s.slug, s.version, s.display_name)
 
     return 0
 
