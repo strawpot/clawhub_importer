@@ -1,0 +1,139 @@
+"""Publish transformed skills to StrawHub via multipart API."""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+
+import httpx
+
+from .crawler import CrawledSkill
+
+logger = logging.getLogger(__name__)
+
+STRAWHUB_TARGETS = {
+    "production": "https://strawhub.dev",
+    "preview": "https://preview.strawhub.dev",
+    "local": "http://localhost:4175",
+}
+STRAWHUB_BASE = STRAWHUB_TARGETS["production"]
+
+
+@dataclass
+class PublishResult:
+    slug: str
+    success: bool
+    status_code: int
+    message: str
+
+
+async def publish_skill(
+    client: httpx.AsyncClient,
+    skill: CrawledSkill,
+    token: str,
+    base_url: str = STRAWHUB_BASE,
+) -> PublishResult:
+    """Publish a single skill to StrawHub via POST /api/v1/skills."""
+
+    # Build multipart form data
+    fields: dict[str, str] = {
+        "slug": skill.slug,
+        "displayName": skill.display_name,
+        "version": skill.version,
+        "changelog": skill.changelog or f"Imported from ClawHub ({skill.version})",
+    }
+
+    # Add dependencies if the transformed SKILL.md has them
+    fields["dependencies"] = json.dumps({"skills": []})
+
+    # Build file parts
+    files_list: list[tuple[str, tuple[str, bytes, str]]] = []
+    for f in skill.files:
+        if f.content is None:
+            logger.warning("Skipping file %s/%s (no content)", skill.slug, f.path)
+            continue
+        content_type = "text/markdown" if f.path.endswith(".md") else "application/octet-stream"
+        files_list.append(("files", (f.path, f.content, content_type)))
+
+    if not files_list:
+        return PublishResult(
+            slug=skill.slug,
+            success=False,
+            status_code=0,
+            message="No files to upload",
+        )
+
+    # Check that SKILL.md exists
+    has_skill_md = any(name == "SKILL.md" for _, (name, _, _) in files_list)
+    if not has_skill_md:
+        return PublishResult(
+            slug=skill.slug,
+            success=False,
+            status_code=0,
+            message="Missing SKILL.md",
+        )
+
+    try:
+        resp = await client.post(
+            f"{base_url}/api/v1/skills",
+            data=fields,
+            files=files_list,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60.0,
+        )
+
+        if resp.status_code in (200, 201):
+            logger.info("Published %s (v%s) → StrawHub", skill.slug, skill.version)
+            return PublishResult(
+                slug=skill.slug,
+                success=True,
+                status_code=resp.status_code,
+                message="OK",
+            )
+        else:
+            body = resp.text[:500]
+            logger.warning(
+                "Failed to publish %s: %d %s", skill.slug, resp.status_code, body
+            )
+            return PublishResult(
+                slug=skill.slug,
+                success=False,
+                status_code=resp.status_code,
+                message=body,
+            )
+    except Exception as e:
+        logger.exception("Error publishing %s", skill.slug)
+        return PublishResult(
+            slug=skill.slug,
+            success=False,
+            status_code=0,
+            message=str(e),
+        )
+
+
+async def publish_all(
+    client: httpx.AsyncClient,
+    skills: list[CrawledSkill],
+    token: str,
+    dry_run: bool = False,
+    base_url: str = STRAWHUB_BASE,
+) -> list[PublishResult]:
+    """Publish all skills to StrawHub."""
+    results: list[PublishResult] = []
+
+    for skill in skills:
+        if dry_run:
+            logger.info("[DRY RUN] Would publish: %s (v%s)", skill.slug, skill.version)
+            results.append(PublishResult(
+                slug=skill.slug,
+                success=True,
+                status_code=0,
+                message="dry-run",
+            ))
+            continue
+
+        result = await publish_skill(client, skill, token, base_url=base_url)
+        results.append(result)
+
+    return results

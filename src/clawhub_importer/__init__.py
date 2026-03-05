@@ -1,0 +1,1 @@
+"""ClawHub → StrawHub skill importer."""
