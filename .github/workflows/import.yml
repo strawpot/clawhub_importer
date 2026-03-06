@@ -44,7 +44,7 @@ jobs:
           echo "env=$ENV" >> "$GITHUB_OUTPUT"
 
       - name: Restore import state
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .clawhub_importer_state.json
           key: import-state-${{ steps.target.outputs.env }}-${{ github.run_id }}
@@ -56,3 +56,10 @@ jobs:
           STRAWHUB_URL: ${{ steps.target.outputs.env == 'preview' && secrets.STRAWHUB_PREVIEW_URL || secrets.STRAWHUB_PROD_URL }}
           STRAWHUB_TOKEN: ${{ steps.target.outputs.env == 'preview' && secrets.STRAWHUB_PREVIEW_TOKEN || secrets.STRAWHUB_PROD_TOKEN }}
         run: clawhub-importer --publish
+
+      - name: Save import state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .clawhub_importer_state.json
+          key: import-state-${{ steps.target.outputs.env }}-${{ github.run_id }}
