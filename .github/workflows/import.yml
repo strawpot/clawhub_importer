@@ -1,11 +1,11 @@
 name: Daily Import
 
 on:
-  schedule:
-    # Preview: every day at 06:00 UTC
-    - cron: "0 6 * * *"
-    # Production: every day at 08:00 UTC
-    - cron: "0 8 * * *"
+  # schedule:
+  #   # Preview: every day at 06:00 UTC
+  #   - cron: "0 6 * * *"
+  #   # Production: every day at 08:00 UTC
+  #   - cron: "0 8 * * *"
   workflow_dispatch:
     inputs:
       target:
