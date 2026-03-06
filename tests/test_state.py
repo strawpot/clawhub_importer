@@ -66,3 +66,26 @@ def test_overwrite_version():
 
     assert not state.is_imported("foo", "1.0.0")
     assert state.is_imported("foo", "2.0.0")
+
+
+def test_mark_skipped():
+    state = ImportState()
+    assert not state.is_skipped("foo")
+
+    state.mark_skipped("foo")
+    assert state.is_skipped("foo")
+    assert not state.is_skipped("bar")
+
+
+def test_save_and_load_skipped(tmp_path):
+    path = str(tmp_path / "state.json")
+
+    state = ImportState()
+    state.mark_imported("skill-a", "1.0.0")
+    state.mark_skipped("claimed-skill")
+    save_state(state, path)
+
+    loaded = load_state(path)
+    assert loaded.is_imported("skill-a", "1.0.0")
+    assert loaded.is_skipped("claimed-skill")
+    assert not loaded.is_skipped("skill-a")
