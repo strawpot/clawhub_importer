@@ -48,13 +48,13 @@ clawhub-importer --publish --force
 ### Publish targets
 
 ```bash
-# Production (default) — https://strawhub.dev
+# Production (default)
 clawhub-importer --publish
 
-# Preview — https://preview.strawhub.dev
+# Preview
 clawhub-importer --publish --preview
 
-# Local dev — http://localhost:4175
+# Local dev
 clawhub-importer --publish --local
 ```
 
@@ -70,8 +70,8 @@ clawhub-importer [OPTIONS]
   --slugs SLUG [...]   Only process specific skill slugs
   --force              Re-import all skills, ignoring previous state
   --state-file PATH    Path to import state file (default: .clawhub_importer_state.json)
-  --local              Publish to local dev server (http://localhost:4175)
-  --preview            Publish to preview server (https://preview.strawhub.dev)
+  --local              Publish to local dev server
+  --preview            Publish to preview server
   -v, --verbose        Enable debug logging
 ```
 
@@ -110,3 +110,7 @@ metadata:
 ## Rate limiting
 
 The importer respects ClawHub's rate limits (120 req/60s for list API, 20 req/60s for downloads) by reading response headers and throttling automatically. Filtering by state before downloading avoids wasting the expensive download quota on unchanged skills.
+
+## License
+
+[MIT](LICENSE)
