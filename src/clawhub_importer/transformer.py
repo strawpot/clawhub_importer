@@ -83,6 +83,8 @@ def build_strawpot_metadata(
     """
     strawpot: dict[str, Any] = {"dependencies": []}
     requires = openclaw.get("requires", {})
+    if not isinstance(requires, dict):
+        requires = {}
 
     bins = requires.get("bins", [])
     if bins:
