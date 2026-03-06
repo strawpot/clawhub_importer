@@ -248,6 +248,22 @@ async def test_retry_on_429_uses_retry_after():
 
 
 @respx.mock
+async def test_retry_on_5xx():
+    """Should retry after 5xx server errors and succeed on the next attempt."""
+    route = respx.get(f"{CLAWHUB_BASE}/test")
+    route.side_effect = [
+        httpx.Response(502),
+        httpx.Response(200, json={"ok": True}),
+    ]
+
+    async with httpx.AsyncClient() as client:
+        resp = await _request_with_retry(client, "GET", f"{CLAWHUB_BASE}/test")
+
+    assert resp.status_code == 200
+    assert route.call_count == 2
+
+
+@respx.mock
 async def test_no_retry_on_success():
     """Should not retry on successful responses."""
     route = respx.get(f"{CLAWHUB_BASE}/test")
