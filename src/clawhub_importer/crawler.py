@@ -136,7 +136,7 @@ async def _request_with_retry(
         if reset is not None:
             wait = max(int(reset), 1)
         else:
-            wait = min(2 ** attempt, 120)
+            wait = min(2 ** attempt * 10, 120)
 
         logger.warning(
             "Rate limited (429), attempt %d/%d, waiting %ds before retry",
