@@ -116,6 +116,15 @@ async def publish_skill(
         )
     except httpx.HTTPStatusError as e:
         body = e.response.text[:500]
+        # Treat duplicate version as success (idempotent import)
+        if e.response.status_code == 400 and "version" in body.lower() and "already exists" in body.lower():
+            logger.info("Skipped %s (v%s) — version already exists", skill.slug, skill.version)
+            return PublishResult(
+                slug=skill.slug,
+                success=True,
+                status_code=e.response.status_code,
+                message="already exists",
+            )
         logger.warning(
             "Failed to publish %s: %d %s", skill.slug, e.response.status_code, body
         )

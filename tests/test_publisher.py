@@ -156,3 +156,34 @@ async def test_publish_skill_retries_on_429():
     assert result.success
     assert result.status_code == 201
     assert route.call_count == 2
+
+
+# --- duplicate version handling ---
+
+@respx.mock
+async def test_publish_skill_duplicate_version_treated_as_success():
+    """A 400 with 'Version X already exists' should be treated as success for idempotent imports."""
+    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
+        return_value=httpx.Response(400, json={"error": "Version 1.0.0 already exists"})
+    )
+
+    async with httpx.AsyncClient() as client:
+        result = await publish_skill(client, _make_skill(), "fake-token")
+
+    assert result.success
+    assert result.status_code == 400
+    assert result.message == "already exists"
+
+
+@respx.mock
+async def test_publish_skill_other_400_not_treated_as_success():
+    """A 400 that is NOT about duplicate versions should still fail."""
+    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
+        return_value=httpx.Response(400, json={"error": "slug is invalid"})
+    )
+
+    async with httpx.AsyncClient() as client:
+        result = await publish_skill(client, _make_skill(), "fake-token")
+
+    assert not result.success
+    assert result.status_code == 400
