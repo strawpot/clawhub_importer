@@ -122,29 +122,36 @@ async def _request_with_retry(
     url: str,
     **kwargs: Any,
 ) -> httpx.Response:
-    """Make an HTTP request with automatic retry on 429 Too Many Requests."""
+    """Make an HTTP request with automatic retry on 429 and 5xx errors."""
     for attempt in range(1, MAX_RETRIES + 1):
         resp = await client.request(method, url, **kwargs)
 
-        if resp.status_code != 429:
+        if resp.status_code == 429:
+            # 429 — extract wait time from headers or use exponential backoff
+            reset = resp.headers.get("ratelimit-reset") or resp.headers.get("retry-after")
+            if reset is not None:
+                wait = max(int(reset), 1)
+            else:
+                wait = min(2 ** attempt * 10, 120)
+            logger.warning(
+                "Rate limited (429), attempt %d/%d, waiting %ds before retry",
+                attempt, MAX_RETRIES, wait,
+            )
+            await asyncio.sleep(wait)
+        elif resp.status_code >= 500:
+            # 5xx — transient server error, retry with exponential backoff
+            wait = min(2 ** attempt * 5, 60)
+            logger.warning(
+                "Server error (%d), attempt %d/%d, waiting %ds before retry",
+                resp.status_code, attempt, MAX_RETRIES, wait,
+            )
+            await asyncio.sleep(wait)
+        else:
             await _respect_rate_limit(resp)
             resp.raise_for_status()
             return resp
 
-        # 429 — extract wait time from headers or use exponential backoff
-        reset = resp.headers.get("ratelimit-reset") or resp.headers.get("retry-after")
-        if reset is not None:
-            wait = max(int(reset), 1)
-        else:
-            wait = min(2 ** attempt * 10, 120)
-
-        logger.warning(
-            "Rate limited (429), attempt %d/%d, waiting %ds before retry",
-            attempt, MAX_RETRIES, wait,
-        )
-        await asyncio.sleep(wait)
-
-    # Final attempt — let it raise if still 429
+    # Final attempt — let it raise if still failing
     resp = await client.request(method, url, **kwargs)
     resp.raise_for_status()
     return resp
