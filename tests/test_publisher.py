@@ -4,7 +4,7 @@ import httpx
 import respx
 
 from clawhub_importer.crawler import CrawledSkill, SkillFile
-from clawhub_importer.publisher import publish_skill, publish_all, STRAWHUB_TARGETS, _build_changelog
+from clawhub_importer.publisher import publish_skill, publish_all, STRAWHUB_BASE, STRAWHUB_TARGETS, _build_changelog
 
 
 def _make_skill(slug: str = "test-skill") -> CrawledSkill:
@@ -26,7 +26,7 @@ def _make_skill(slug: str = "test-skill") -> CrawledSkill:
 
 @respx.mock
 async def test_publish_skill_success():
-    respx.post("https://strawhub.dev/api/v1/skills").mock(
+    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
         return_value=httpx.Response(201, json={"slug": "test-skill"})
     )
 
@@ -39,7 +39,7 @@ async def test_publish_skill_success():
 
 @respx.mock
 async def test_publish_skill_failure():
-    respx.post("https://strawhub.dev/api/v1/skills").mock(
+    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
         return_value=httpx.Response(400, text="Bad request")
     )
 
@@ -52,7 +52,7 @@ async def test_publish_skill_failure():
 
 @respx.mock
 async def test_publish_skill_custom_base_url():
-    respx.post("http://localhost:4175/api/v1/skills").mock(
+    respx.post(f"{STRAWHUB_TARGETS['local']}/api/v1/skills").mock(
         return_value=httpx.Response(201, json={"ok": True})
     )
 
@@ -105,7 +105,7 @@ async def test_publish_all_dry_run():
 
 @respx.mock
 async def test_publish_all_with_preview_target():
-    respx.post("https://preview.strawhub.dev/api/v1/skills").mock(
+    respx.post(f"{STRAWHUB_TARGETS['preview']}/api/v1/skills").mock(
         return_value=httpx.Response(201, json={"ok": True})
     )
 
@@ -144,7 +144,7 @@ def test_build_changelog_empty():
 @respx.mock
 async def test_publish_skill_retries_on_429():
     """Publisher should retry on 429 from StrawHub."""
-    route = respx.post("https://strawhub.dev/api/v1/skills")
+    route = respx.post(f"{STRAWHUB_BASE}/api/v1/skills")
     route.side_effect = [
         httpx.Response(429, headers={"ratelimit-reset": "1"}),
         httpx.Response(201, json={"slug": "test-skill"}),

@@ -13,9 +13,9 @@ from .crawler import CrawledSkill, _request_with_retry
 logger = logging.getLogger(__name__)
 
 STRAWHUB_TARGETS = {
-    "production": "https://strawhub.dev",
-    "preview": "https://preview.strawhub.dev",
-    "local": "http://localhost:4175",
+    "production": "https://descriptive-crab-211.convex.site",
+    "preview": "https://notable-monitor-301.convex.site",
+    "local": "http://127.0.0.1:3211",
 }
 STRAWHUB_BASE = STRAWHUB_TARGETS["production"]
 
