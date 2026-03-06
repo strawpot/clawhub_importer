@@ -135,8 +135,12 @@ def transform_frontmatter(skill_md: str, openclaw_meta: dict[str, Any], slug: st
         fm_data = {}
 
     # Ensure frontmatter name matches the slug
-    if slug and fm_data.get("name") and fm_data["name"] != slug:
-        logger.info("Rewriting frontmatter name %r → %r", fm_data["name"], slug)
+    if slug and fm_data.get("name") != slug:
+        old_name = fm_data.get("name")
+        if old_name:
+            logger.info("Rewriting frontmatter name %r → %r", old_name, slug)
+        else:
+            logger.info("Setting frontmatter name to %r", slug)
         fm_data["name"] = slug
 
     # Extract requires_tools before removing it

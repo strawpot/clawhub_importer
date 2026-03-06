@@ -175,6 +175,14 @@ def test_transform_frontmatter_no_slug_no_rewrite():
     assert fm["name"] == "original"
 
 
+def test_transform_frontmatter_adds_name_when_missing():
+    skill_md = "---\ndescription: no name field\n---\n# Body"
+    result = transform_frontmatter(skill_md, {}, slug="my-skill")
+    fm_text = result.split("---")[1]
+    fm = yaml.safe_load(fm_text)
+    assert fm["name"] == "my-skill"
+
+
 # --- transform_skill ---
 
 def test_transform_skill_updates_file_content():
