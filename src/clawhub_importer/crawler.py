@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
 import zipfile
 from dataclasses import dataclass, field
 from typing import Any
@@ -30,6 +31,14 @@ class SkillFile:
 
 
 @dataclass
+class SkillOwner:
+    handle: str
+    github_id: str
+    display_name: str
+    avatar_url: str
+
+
+@dataclass
 class CrawledSkill:
     slug: str
     display_name: str
@@ -37,11 +46,37 @@ class CrawledSkill:
     version: str
     changelog: str
     metadata: dict[str, Any] | None
+    owner: SkillOwner | None = None
     files: list[SkillFile] = field(default_factory=list)
     skill_md: str | None = None
 
 
+_GITHUB_AVATAR_RE = re.compile(r"avatars\.githubusercontent\.com/u/(\d+)")
+
 MAX_RETRIES = 5
+
+
+def extract_github_id(avatar_url: str) -> str | None:
+    """Extract GitHub user ID from avatar URL.
+
+    e.g. https://avatars.githubusercontent.com/u/71600332?v=4 → "71600332"
+    """
+    match = _GITHUB_AVATAR_RE.search(avatar_url)
+    return match.group(1) if match else None
+
+
+def parse_owner(owner_data: dict[str, Any] | None) -> SkillOwner | None:
+    """Parse owner info from ClawHub API response."""
+    if not owner_data:
+        return None
+    avatar_url = owner_data.get("image", "")
+    github_id = extract_github_id(avatar_url) or ""
+    return SkillOwner(
+        handle=owner_data.get("handle", ""),
+        github_id=github_id,
+        display_name=owner_data.get("displayName", ""),
+        avatar_url=avatar_url,
+    )
 
 
 async def _respect_rate_limit(resp: httpx.Response) -> None:
@@ -187,6 +222,9 @@ async def crawl_skill(
         detail = await fetch_skill_detail(client, slug)
     latest = detail.get("latestVersion") or {}
 
+    # Parse owner info (detail API includes owner with GitHub avatar)
+    owner = parse_owner(detail.get("owner"))
+
     # Download the full zip archive (rate-limited at 20 req/60s)
     zip_bytes = await download_skill_zip(client, slug)
 
@@ -213,6 +251,7 @@ async def crawl_skill(
         version=latest.get("version", "0.0.1"),
         changelog=latest.get("changelog", ""),
         metadata=detail.get("metadata"),
+        owner=owner,
         files=files,
         skill_md=skill_md,
     )

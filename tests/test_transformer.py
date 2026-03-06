@@ -2,9 +2,10 @@
 
 import yaml
 
-from clawhub_importer.crawler import CrawledSkill, SkillFile
+from clawhub_importer.crawler import CrawledSkill, SkillFile, SkillOwner
 from clawhub_importer.transformer import (
     build_strawpot_metadata,
+    build_import_metadata,
     parse_openclaw_metadata,
     transform_frontmatter,
     transform_skill,
@@ -64,6 +65,29 @@ def test_build_strawpot_no_bins():
     assert "tools" not in result
 
 
+# --- build_import_metadata ---
+
+def test_build_import_metadata_with_owner():
+    owner = SkillOwner(handle="alice", github_id="12345", display_name="Alice", avatar_url="")
+    result = build_import_metadata(owner)
+    assert result["source"] == "clawhub"
+    assert result["originalOwner"]["handle"] == "alice"
+    assert result["originalOwner"]["githubId"] == "12345"
+
+
+def test_build_import_metadata_no_owner():
+    result = build_import_metadata(None)
+    assert result["source"] == "clawhub"
+    assert "originalOwner" not in result
+
+
+def test_build_import_metadata_no_github_id():
+    owner = SkillOwner(handle="bob", github_id="", display_name="Bob", avatar_url="")
+    result = build_import_metadata(owner)
+    assert result["source"] == "clawhub"
+    assert "originalOwner" not in result
+
+
 # --- transform_frontmatter ---
 
 def test_transform_inline_json_metadata():
@@ -98,6 +122,18 @@ metadata:
     fm_text = result.split("---")[1]
     fm = yaml.safe_load(fm_text)
     assert "clawdbot" in fm["metadata"]
+    assert "strawpot" in fm["metadata"]
+
+
+def test_transform_frontmatter_no_import_in_frontmatter():
+    """_import metadata should NOT be in SKILL.md frontmatter (sent as separate form field)."""
+    skill_md = '---\nname: test\nmetadata: {"openclaw":{"requires":{"bins":["node"]}}}\n---\n# Hi'
+    openclaw = {"requires": {"bins": ["node"]}}
+
+    result = transform_frontmatter(skill_md, openclaw)
+    fm_text = result.split("---")[1]
+    fm = yaml.safe_load(fm_text)
+    assert "_import" not in fm["metadata"]
     assert "strawpot" in fm["metadata"]
 
 

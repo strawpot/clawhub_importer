@@ -62,6 +62,14 @@ async def publish_skill(
     # Add dependencies if the transformed SKILL.md has them
     fields["dependencies"] = json.dumps({"skills": []})
 
+    # Add import source for ownership claim tracking
+    if skill.owner and skill.owner.github_id:
+        fields["importSource"] = json.dumps({
+            "source": "clawhub",
+            "originalOwnerHandle": skill.owner.handle,
+            "originalOwnerGithubId": skill.owner.github_id,
+        })
+
     # Build file parts
     files_list: list[tuple[str, tuple[str, bytes, str]]] = []
     for f in skill.files:

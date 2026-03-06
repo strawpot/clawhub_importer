@@ -171,6 +171,11 @@ def _dump_skills(skills: list, dump_dir: str) -> None:
             "version": skill.version,
             "changelog": skill.changelog,
             "files": [f.path for f in skill.files],
+            "owner": {
+                "handle": skill.owner.handle,
+                "githubId": skill.owner.github_id,
+                "displayName": skill.owner.display_name,
+            } if skill.owner else None,
         }
         with open(os.path.join(skill_dir, "_meta.json"), "w") as f:
             json.dump(meta, f, indent=2)

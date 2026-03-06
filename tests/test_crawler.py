@@ -12,7 +12,10 @@ from clawhub_importer.crawler import (
     CLAWHUB_DOWNLOAD,
     CrawledSkill,
     SkillFile,
+    SkillOwner,
     extract_zip,
+    extract_github_id,
+    parse_owner,
     list_all_skills,
     fetch_skill_detail,
     crawl_skill,
@@ -28,6 +31,42 @@ def _make_zip(files: dict[str, bytes]) -> bytes:
         for name, content in files.items():
             zf.writestr(name, content)
     return buf.getvalue()
+
+
+# --- extract_github_id / parse_owner ---
+
+def test_extract_github_id():
+    url = "https://avatars.githubusercontent.com/u/71600332?v=4"
+    assert extract_github_id(url) == "71600332"
+
+
+def test_extract_github_id_no_match():
+    assert extract_github_id("https://example.com/avatar.png") is None
+    assert extract_github_id("") is None
+
+
+def test_parse_owner():
+    data = {
+        "handle": "sonerbo",
+        "userId": "kn7f03p6pyw9xssr5fy22wtpcd82bh0r",
+        "displayName": "sonerbo",
+        "image": "https://avatars.githubusercontent.com/u/71600332?v=4",
+    }
+    owner = parse_owner(data)
+    assert owner is not None
+    assert owner.handle == "sonerbo"
+    assert owner.github_id == "71600332"
+    assert owner.display_name == "sonerbo"
+
+
+def test_parse_owner_none():
+    assert parse_owner(None) is None
+
+
+def test_parse_owner_no_avatar():
+    owner = parse_owner({"handle": "test", "displayName": "Test", "image": ""})
+    assert owner is not None
+    assert owner.github_id == ""
 
 
 # --- extract_zip ---
@@ -129,7 +168,14 @@ async def test_crawl_skill_with_detail():
         return_value=httpx.Response(200, content=zip_bytes)
     )
 
-    detail = {"latestVersion": {"version": "2.0.0", "changelog": "updated"}}
+    detail = {
+        "latestVersion": {"version": "2.0.0", "changelog": "updated"},
+        "owner": {
+            "handle": "testuser",
+            "displayName": "Test User",
+            "image": "https://avatars.githubusercontent.com/u/12345?v=4",
+        },
+    }
     summary = {"slug": "test", "displayName": "Test"}
 
     async with httpx.AsyncClient() as client:
@@ -138,6 +184,9 @@ async def test_crawl_skill_with_detail():
     assert skill.slug == "test"
     assert skill.version == "2.0.0"
     assert skill.skill_md is not None
+    assert skill.owner is not None
+    assert skill.owner.github_id == "12345"
+    assert skill.owner.handle == "testuser"
 
 
 @respx.mock

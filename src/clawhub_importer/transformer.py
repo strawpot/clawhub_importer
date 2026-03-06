@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from .crawler import CrawledSkill
+from .crawler import CrawledSkill, SkillOwner
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,17 @@ def build_strawpot_metadata(
         strawpot["tools"] = tools
 
     return strawpot
+
+
+def build_import_metadata(owner: SkillOwner | None) -> dict[str, Any]:
+    """Build _import metadata for ownership tracking."""
+    meta: dict[str, Any] = {"source": "clawhub"}
+    if owner and owner.github_id:
+        meta["originalOwner"] = {
+            "handle": owner.handle,
+            "githubId": owner.github_id,
+        }
+    return meta
 
 
 def transform_frontmatter(skill_md: str, openclaw_meta: dict[str, Any]) -> str:
