@@ -1,0 +1,58 @@
+name: Daily Import
+
+on:
+  schedule:
+    # Preview: every day at 06:00 UTC
+    - cron: "0 6 * * *"
+    # Production: every day at 08:00 UTC
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - preview
+          - production
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install .
+
+      - name: Determine target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ inputs.target }}"
+          elif [ "${{ github.event.schedule }}" = "0 6 * * *" ]; then
+            ENV="preview"
+          else
+            ENV="production"
+          fi
+          echo "env=$ENV" >> "$GITHUB_OUTPUT"
+
+      - name: Restore import state
+        uses: actions/cache@v4
+        with:
+          path: .clawhub_importer_state.json
+          key: import-state-${{ steps.target.outputs.env }}-${{ github.run_id }}
+          restore-keys: |
+            import-state-${{ steps.target.outputs.env }}-
+
+      - name: Run import
+        env:
+          STRAWHUB_URL: ${{ steps.target.outputs.env == 'preview' && secrets.STRAWHUB_PREVIEW_URL || secrets.STRAWHUB_PROD_URL }}
+          STRAWHUB_TOKEN: ${{ steps.target.outputs.env == 'preview' && secrets.STRAWHUB_PREVIEW_TOKEN || secrets.STRAWHUB_PROD_TOKEN }}
+        run: clawhub-importer --publish

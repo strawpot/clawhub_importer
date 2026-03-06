@@ -12,7 +12,7 @@ import sys
 import httpx
 
 from .crawler import crawl_skill, fetch_skill_detail, list_all_skills
-from .publisher import STRAWHUB_TARGETS, publish_skill
+from .publisher import publish_skill
 from .state import DEFAULT_STATE_FILE, load_state, save_state
 from .transformer import transform_skill
 
@@ -38,15 +38,12 @@ async def run(args: argparse.Namespace) -> int:
         format="%(asctime)s %(levelname)-8s %(message)s",
     )
 
-    # Resolve target
-    if args.local:
-        target = "local"
-    elif args.preview:
-        target = "preview"
-    else:
-        target = "production"
-    base_url = STRAWHUB_TARGETS[target]
-    logger.info("Target: %s (%s)", target, base_url)
+    # Resolve target URL
+    base_url = args.target or os.environ.get("STRAWHUB_URL", "")
+    if not base_url and not args.dry_run:
+        logger.error("StrawHub URL required. Set --target or STRAWHUB_URL env var.")
+        return 1
+    logger.info("Target: %s", base_url)
 
     token = args.token or os.environ.get("STRAWHUB_TOKEN", "")
     if not token and not args.dry_run:
@@ -232,16 +229,9 @@ def main() -> None:
         help="Enable debug logging",
     )
 
-    target_group = parser.add_mutually_exclusive_group()
-    target_group.add_argument(
-        "--local",
-        action="store_true",
-        help=f"Publish to local dev server ({STRAWHUB_TARGETS['local']})",
-    )
-    target_group.add_argument(
-        "--preview",
-        action="store_true",
-        help=f"Publish to preview server ({STRAWHUB_TARGETS['preview']})",
+    parser.add_argument(
+        "--target",
+        help="StrawHub base URL (or set STRAWHUB_URL env var)",
     )
 
     args = parser.parse_args()

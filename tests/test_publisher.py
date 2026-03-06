@@ -4,7 +4,9 @@ import httpx
 import respx
 
 from clawhub_importer.crawler import CrawledSkill, SkillFile
-from clawhub_importer.publisher import publish_skill, publish_all, STRAWHUB_BASE, STRAWHUB_TARGETS, _build_changelog
+from clawhub_importer.publisher import publish_skill, publish_all, _build_changelog
+
+TEST_BASE_URL = "https://test.example.com"
 
 
 def _make_skill(slug: str = "test-skill") -> CrawledSkill:
@@ -26,12 +28,12 @@ def _make_skill(slug: str = "test-skill") -> CrawledSkill:
 
 @respx.mock
 async def test_publish_skill_success():
-    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
+    respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(
         return_value=httpx.Response(201, json={"slug": "test-skill"})
     )
 
     async with httpx.AsyncClient() as client:
-        result = await publish_skill(client, _make_skill(), "fake-token")
+        result = await publish_skill(client, _make_skill(), "fake-token", base_url=TEST_BASE_URL)
 
     assert result.success
     assert result.status_code == 201
@@ -39,12 +41,12 @@ async def test_publish_skill_success():
 
 @respx.mock
 async def test_publish_skill_failure():
-    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
+    respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(
         return_value=httpx.Response(400, text="Bad request")
     )
 
     async with httpx.AsyncClient() as client:
-        result = await publish_skill(client, _make_skill(), "fake-token")
+        result = await publish_skill(client, _make_skill(), "fake-token", base_url=TEST_BASE_URL)
 
     assert not result.success
     assert result.status_code == 400
@@ -52,14 +54,14 @@ async def test_publish_skill_failure():
 
 @respx.mock
 async def test_publish_skill_custom_base_url():
-    respx.post(f"{STRAWHUB_TARGETS['local']}/api/v1/skills").mock(
+    respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(
         return_value=httpx.Response(201, json={"ok": True})
     )
 
     async with httpx.AsyncClient() as client:
         result = await publish_skill(
             client, _make_skill(), "fake-token",
-            base_url=STRAWHUB_TARGETS["local"],
+            base_url=TEST_BASE_URL,
         )
 
     assert result.success
@@ -71,7 +73,7 @@ async def test_publish_skill_no_files():
         changelog="", metadata=None, files=[],
     )
     async with httpx.AsyncClient() as client:
-        result = await publish_skill(client, skill, "token")
+        result = await publish_skill(client, skill, "token", base_url=TEST_BASE_URL)
 
     assert not result.success
     assert "No files" in result.message
@@ -84,7 +86,7 @@ async def test_publish_skill_missing_skill_md():
         files=[SkillFile(path="other.txt", size=3, content=b"hi!")],
     )
     async with httpx.AsyncClient() as client:
-        result = await publish_skill(client, skill, "token")
+        result = await publish_skill(client, skill, "token", base_url=TEST_BASE_URL)
 
     assert not result.success
     assert "Missing SKILL.md" in result.message
@@ -105,14 +107,14 @@ async def test_publish_all_dry_run():
 
 @respx.mock
 async def test_publish_all_with_preview_target():
-    respx.post(f"{STRAWHUB_TARGETS['preview']}/api/v1/skills").mock(
+    respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(
         return_value=httpx.Response(201, json={"ok": True})
     )
 
     async with httpx.AsyncClient() as client:
         results = await publish_all(
             client, [_make_skill()], "token",
-            base_url=STRAWHUB_TARGETS["preview"],
+            base_url=TEST_BASE_URL,
         )
 
     assert len(results) == 1
@@ -144,14 +146,14 @@ def test_build_changelog_empty():
 @respx.mock
 async def test_publish_skill_retries_on_429():
     """Publisher should retry on 429 from StrawHub."""
-    route = respx.post(f"{STRAWHUB_BASE}/api/v1/skills")
+    route = respx.post(f"{TEST_BASE_URL}/api/v1/skills")
     route.side_effect = [
         httpx.Response(429, headers={"ratelimit-reset": "1"}),
         httpx.Response(201, json={"slug": "test-skill"}),
     ]
 
     async with httpx.AsyncClient() as client:
-        result = await publish_skill(client, _make_skill(), "fake-token")
+        result = await publish_skill(client, _make_skill(), "fake-token", base_url=TEST_BASE_URL)
 
     assert result.success
     assert result.status_code == 201
@@ -163,12 +165,12 @@ async def test_publish_skill_retries_on_429():
 @respx.mock
 async def test_publish_skill_duplicate_version_treated_as_success():
     """A 400 with 'Version X already exists' should be treated as success for idempotent imports."""
-    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
+    respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(
         return_value=httpx.Response(400, json={"error": "Version 1.0.0 already exists"})
     )
 
     async with httpx.AsyncClient() as client:
-        result = await publish_skill(client, _make_skill(), "fake-token")
+        result = await publish_skill(client, _make_skill(), "fake-token", base_url=TEST_BASE_URL)
 
     assert result.success
     assert result.status_code == 400
@@ -178,12 +180,12 @@ async def test_publish_skill_duplicate_version_treated_as_success():
 @respx.mock
 async def test_publish_skill_other_400_not_treated_as_success():
     """A 400 that is NOT about duplicate versions should still fail."""
-    respx.post(f"{STRAWHUB_BASE}/api/v1/skills").mock(
+    respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(
         return_value=httpx.Response(400, json={"error": "slug is invalid"})
     )
 
     async with httpx.AsyncClient() as client:
-        result = await publish_skill(client, _make_skill(), "fake-token")
+        result = await publish_skill(client, _make_skill(), "fake-token", base_url=TEST_BASE_URL)
 
     assert not result.success
     assert result.status_code == 400
