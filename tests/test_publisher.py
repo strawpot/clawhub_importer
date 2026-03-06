@@ -178,6 +178,21 @@ async def test_publish_skill_duplicate_version_treated_as_success():
 
 
 @respx.mock
+async def test_publish_skill_claimed_treated_as_success():
+    """A 400 with 'You do not own this skill' should be treated as success to skip on future runs."""
+    respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(
+        return_value=httpx.Response(400, json={"error": "You do not own this skill"})
+    )
+
+    async with httpx.AsyncClient() as client:
+        result = await publish_skill(client, _make_skill(), "fake-token", base_url=TEST_BASE_URL)
+
+    assert not result.success
+    assert result.status_code == 400
+    assert result.message == "claimed"
+
+
+@respx.mock
 async def test_publish_skill_other_400_not_treated_as_success():
     """A 400 that is NOT about duplicate versions should still fail."""
     respx.post(f"{TEST_BASE_URL}/api/v1/skills").mock(

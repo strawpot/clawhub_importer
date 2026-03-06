@@ -23,6 +23,15 @@ class SkillState:
 @dataclass
 class ImportState:
     skills: dict[str, SkillState] = field(default_factory=dict)
+    skipped_slugs: set[str] = field(default_factory=set)
+
+    def is_skipped(self, slug: str) -> bool:
+        """Check if a slug is permanently skipped (e.g. claimed by another user)."""
+        return slug in self.skipped_slugs
+
+    def mark_skipped(self, slug: str) -> None:
+        """Mark a slug as permanently skipped."""
+        self.skipped_slugs.add(slug)
 
     def is_imported(self, slug: str, version: str) -> bool:
         """Check if a skill at this exact version was already imported."""
@@ -69,8 +78,10 @@ def load_state(path: str) -> ImportState:
                 imported_at=entry.get("imported_at", ""),
             )
 
-        state = ImportState(skills=skills)
-        logger.info("Loaded state: %d skills previously imported", len(skills))
+        skipped = set(data.get("skipped_slugs", []))
+
+        state = ImportState(skills=skills, skipped_slugs=skipped)
+        logger.info("Loaded state: %d skills previously imported, %d skipped", len(skills), len(skipped))
         return state
     except Exception:
         logger.exception("Failed to load state from %s, starting fresh", path)
@@ -81,6 +92,7 @@ def save_state(state: ImportState, path: str) -> None:
     """Save import state to a JSON file."""
     data: dict[str, Any] = {
         "skills": {slug: asdict(s) for slug, s in state.skills.items()},
+        "skipped_slugs": sorted(state.skipped_slugs),
     }
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w") as f:

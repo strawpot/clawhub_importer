@@ -118,6 +118,15 @@ async def publish_skill(
                 status_code=e.response.status_code,
                 message="already exists",
             )
+        # Skill claimed by another user — not an error we can fix by retrying
+        if e.response.status_code == 400 and "do not own" in body.lower():
+            logger.info("Skipped %s (v%s) — skill claimed by another user", skill.slug, skill.version)
+            return PublishResult(
+                slug=skill.slug,
+                success=False,
+                status_code=e.response.status_code,
+                message="claimed",
+            )
         logger.warning(
             "Failed to publish %s: %d %s", skill.slug, e.response.status_code, body
         )

@@ -84,7 +84,10 @@ async def run(args: argparse.Namespace) -> int:
             for s in summaries:
                 slug = s["slug"]
                 version = _get_version(s)
-                if state.is_imported(slug, version):
+                if state.is_skipped(slug):
+                    skipped += 1
+                    logger.debug("Skipping %s (permanently skipped)", slug)
+                elif state.is_imported(slug, version):
                     skipped += 1
                     logger.debug("Skipping %s v%s (already imported)", slug, version)
                 else:
@@ -137,6 +140,10 @@ async def run(args: argparse.Namespace) -> int:
                     if result.success:
                         succeeded += 1
                         state.mark_imported(skill.slug, skill.version)
+                        save_state(state, state_path)
+                    elif result.message == "claimed":
+                        succeeded += 1
+                        state.mark_skipped(skill.slug)
                         save_state(state, state_path)
                     else:
                         failed += 1
