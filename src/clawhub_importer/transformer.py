@@ -108,10 +108,11 @@ def build_import_metadata(owner: SkillOwner | None) -> dict[str, Any]:
     return meta
 
 
-def transform_frontmatter(skill_md: str, openclaw_meta: dict[str, Any]) -> str:
+def transform_frontmatter(skill_md: str, openclaw_meta: dict[str, Any], slug: str | None = None) -> str:
     """Rewrite SKILL.md frontmatter: replace metadata.openclaw with metadata.strawpot.
 
     Uses YAML parsing for robust handling of both inline JSON and multi-line YAML metadata.
+    If slug is provided, ensures the frontmatter name matches the slug.
     """
     match = FRONTMATTER_RE.match(skill_md)
     if not match:
@@ -132,6 +133,11 @@ def transform_frontmatter(skill_md: str, openclaw_meta: dict[str, Any]) -> str:
 
     if not isinstance(fm_data, dict):
         fm_data = {}
+
+    # Ensure frontmatter name matches the slug
+    if slug and fm_data.get("name") and fm_data["name"] != slug:
+        logger.info("Rewriting frontmatter name %r → %r", fm_data["name"], slug)
+        fm_data["name"] = slug
 
     # Extract requires_tools before removing it
     requires_tools = fm_data.get("requires_tools")
@@ -191,7 +197,7 @@ def transform_skill(skill: CrawledSkill) -> CrawledSkill:
         openclaw_meta = parse_openclaw_metadata(skill.metadata)
 
     if skill.skill_md:
-        skill.skill_md = transform_frontmatter(skill.skill_md, openclaw_meta)
+        skill.skill_md = transform_frontmatter(skill.skill_md, openclaw_meta, slug=skill.slug)
         for f in skill.files:
             if f.path == "SKILL.md" and skill.skill_md:
                 f.content = skill.skill_md.encode("utf-8")
