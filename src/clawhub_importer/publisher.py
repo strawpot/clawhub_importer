@@ -12,13 +12,6 @@ from .crawler import CrawledSkill, _request_with_retry
 
 logger = logging.getLogger(__name__)
 
-STRAWHUB_TARGETS = {
-    "production": "https://descriptive-crab-211.convex.site",
-    "preview": "https://notable-monitor-301.convex.site",
-    "local": "http://127.0.0.1:3211",
-}
-STRAWHUB_BASE = STRAWHUB_TARGETS["production"]
-
 ATTRIBUTION = (
     "Originally published on ClawHub (https://clawhub.ai). "
     "Licensed under the MIT License. "
@@ -47,7 +40,7 @@ async def publish_skill(
     client: httpx.AsyncClient,
     skill: CrawledSkill,
     token: str,
-    base_url: str = STRAWHUB_BASE,
+    base_url: str,
 ) -> PublishResult:
     """Publish a single skill to StrawHub via POST /api/v1/skills."""
 
@@ -149,7 +142,7 @@ async def publish_all(
     skills: list[CrawledSkill],
     token: str,
     dry_run: bool = False,
-    base_url: str = STRAWHUB_BASE,
+    base_url: str = "",
 ) -> list[PublishResult]:
     """Publish all skills to StrawHub."""
     results: list[PublishResult] = []
