@@ -151,6 +151,30 @@ def test_transform_no_metadata_key():
     assert "strawpot" in fm["metadata"]
 
 
+def test_transform_frontmatter_rewrites_name_to_slug():
+    skill_md = "---\nname: old-name\n---\n# Body"
+    result = transform_frontmatter(skill_md, {}, slug="new-slug")
+    fm_text = result.split("---")[1]
+    fm = yaml.safe_load(fm_text)
+    assert fm["name"] == "new-slug"
+
+
+def test_transform_frontmatter_keeps_matching_name():
+    skill_md = "---\nname: my-skill\n---\n# Body"
+    result = transform_frontmatter(skill_md, {}, slug="my-skill")
+    fm_text = result.split("---")[1]
+    fm = yaml.safe_load(fm_text)
+    assert fm["name"] == "my-skill"
+
+
+def test_transform_frontmatter_no_slug_no_rewrite():
+    skill_md = "---\nname: original\n---\n# Body"
+    result = transform_frontmatter(skill_md, {})
+    fm_text = result.split("---")[1]
+    fm = yaml.safe_load(fm_text)
+    assert fm["name"] == "original"
+
+
 # --- transform_skill ---
 
 def test_transform_skill_updates_file_content():
