@@ -29,8 +29,15 @@ clawhub-importer --dump-dir ./output
 ### Publish to StrawHub
 
 ```bash
+export STRAWHUB_URL="https://your-strawhub-instance.dev"
 export STRAWHUB_TOKEN="your-api-token"
 clawhub-importer --publish
+```
+
+Or pass the target URL explicitly:
+
+```bash
+clawhub-importer --publish --target https://your-strawhub-instance.dev --token your-api-token
 ```
 
 ### Import specific skills only
@@ -45,39 +52,38 @@ clawhub-importer --publish --slugs gridtrx 12306
 clawhub-importer --publish --force
 ```
 
-### Publish targets
-
-```bash
-# Production (default)
-clawhub-importer --publish
-
-# Preview
-clawhub-importer --publish --preview
-
-# Local dev
-clawhub-importer --publish --local
-```
-
 ### All options
 
 ```
 clawhub-importer [OPTIONS]
 
+  --target URL         StrawHub base URL (or set STRAWHUB_URL env var)
   --token TOKEN        StrawHub API Bearer token (or set STRAWHUB_TOKEN env var)
   --dry-run            Crawl and transform but don't actually publish
-  --publish            Actually publish to StrawHub (requires --token)
+  --publish            Actually publish to StrawHub (requires --token and --target)
   --dump-dir DIR       Directory to dump transformed skills for inspection
   --slugs SLUG [...]   Only process specific skill slugs
   --force              Re-import all skills, ignoring previous state
   --state-file PATH    Path to import state file (default: .clawhub_importer_state.json)
-  --local              Publish to local dev server
-  --preview            Publish to preview server
   -v, --verbose        Enable debug logging
 ```
 
 ## Incremental imports
 
 The importer tracks which skills have been imported and at which version in `.clawhub_importer_state.json`. On subsequent runs, it skips unchanged skills and only downloads new or updated ones. Use `--force` to re-import everything.
+
+Skills claimed by another user on StrawHub (400 "You do not own this skill") are permanently added to a `skipped_slugs` list in the state file, so they are never re-downloaded or re-attempted.
+
+## CI / GitHub Actions
+
+A daily import workflow runs via `.github/workflows/import.yml`:
+
+- **06:00 UTC** — imports to the preview environment
+- **08:00 UTC** — imports to production
+
+The workflow uses `actions/cache` to persist the state file between runs. Manual dispatch is also supported via `workflow_dispatch` with a target selector (preview or production).
+
+Required repository secrets: `STRAWHUB_PREVIEW_URL`, `STRAWHUB_PREVIEW_TOKEN`, `STRAWHUB_PROD_URL`, `STRAWHUB_PROD_TOKEN`.
 
 ## Metadata migration
 

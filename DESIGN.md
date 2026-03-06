@@ -69,7 +69,9 @@ Publishes transformed skills via `POST /api/v1/skills` (multipart/form-data):
 
 - Sends `slug`, `displayName`, `version`, `changelog`, and file uploads
 - Bearer token auth via `--token` flag or `STRAWHUB_TOKEN` env var
-- Supports three targets: production (`strawhub.dev`), preview (`preview.strawhub.dev`), local (`localhost:4175`)
+- Target URL is configured via `--target` flag or `STRAWHUB_URL` env var (no hardcoded URLs)
+- Detects duplicate versions (400 "already exists") and treats them as idempotent success
+- Detects claimed skills (400 "You do not own this skill") and signals the CLI to permanently skip them
 
 **Data model:**
 - `PublishResult` - Tracks per-skill publish outcome: slug, success, status code, message.
@@ -78,11 +80,12 @@ Publishes transformed skills via `POST /api/v1/skills` (multipart/form-data):
 
 Persists import progress to `.clawhub_importer_state.json`:
 
-- **`ImportState`** - Tracks `slug -> SkillState(slug, version, imported_at)`.
+- **`ImportState`** - Tracks `slug -> SkillState(slug, version, imported_at)` and a `skipped_slugs` set.
 - **`is_imported(slug, version)`** - Returns true if this exact version was already imported.
 - **`mark_imported(slug, version)`** - Records a successful import with ISO 8601 timestamp.
+- **`is_skipped(slug)`** / **`mark_skipped(slug)`** - Permanently skip slugs claimed by another user on StrawHub.
 
-State is checked *before* downloading zips, so re-runs only download new or updated skills. This is critical because the download API is rate-limited to 20 req/60s.
+State is checked *before* downloading zips, so re-runs only download new or updated skills. Permanently skipped slugs are filtered out before even checking versions. This is critical because the download API is rate-limited to 20 req/60s.
 
 ## Rate Limiting Strategy
 
@@ -101,11 +104,14 @@ For large imports (1000+ skills), the download API is the bottleneck. Filtering 
 
 ## Publish Targets
 
-| Flag | URL | Use case |
-|------|-----|----------|
-| *(default)* | `https://strawhub.dev` | Production |
-| `--preview` | `https://preview.strawhub.dev` | Staging/QA |
-| `--local` | `http://localhost:4175` | Local development |
+No URLs are hardcoded. The target is configured at runtime:
+
+| Method | Example | Use case |
+|--------|---------|----------|
+| `--target` flag | `--target https://strawhub.dev` | Explicit URL |
+| `STRAWHUB_URL` env var | `export STRAWHUB_URL=https://...` | CI / automation |
+
+In CI, the GitHub Actions workflow sets `STRAWHUB_URL` and `STRAWHUB_TOKEN` from repository secrets.
 
 ## Metadata Format Mapping
 
@@ -160,6 +166,20 @@ metadata:
       "version": "1.2.0",
       "imported_at": "2026-03-05T12:00:00+00:00"
     }
-  }
+  },
+  "skipped_slugs": [
+    "claimed-by-other-user"
+  ]
 }
 ```
+
+## CI / GitHub Actions
+
+The daily import workflow (`.github/workflows/import.yml`) runs on two schedules:
+
+| Cron | Target | Secrets |
+|------|--------|---------|
+| `0 6 * * *` | Preview | `STRAWHUB_PREVIEW_URL`, `STRAWHUB_PREVIEW_TOKEN` |
+| `0 8 * * *` | Production | `STRAWHUB_PROD_URL`, `STRAWHUB_PROD_TOKEN` |
+
+State is persisted between runs using `actions/cache@v4` with a `restore-keys` prefix pattern so the latest state is always restored even if the previous run's cache key differs. Manual dispatch via `workflow_dispatch` is also supported.
